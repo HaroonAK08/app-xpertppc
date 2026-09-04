@@ -1,0 +1,1 @@
+import { Controller,Get } from '@nestjs/common';import { Roles } from '../common/roles.decorator.js';import { OperationsService } from './operations.service.js';@Roles('OWNER','ADMIN')@Controller('v1/operations')export class OperationsController{constructor(private readonly operations:OperationsService){}@Get('queues')queues(){return this.operations.status()}}

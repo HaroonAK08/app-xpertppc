@@ -1,0 +1,1 @@
+import { IsArray,IsBoolean,IsInt,IsObject,IsOptional,IsString,Length,Min } from 'class-validator';export class AutomationDto{@IsString()@Length(1,100)name!:string;@IsOptional()@IsBoolean()enabled?:boolean;@IsOptional()@IsInt()@Min(0)position?:number;@IsObject()conditions!:Record<string,unknown>;@IsArray()actions!:Array<Record<string,unknown>>}

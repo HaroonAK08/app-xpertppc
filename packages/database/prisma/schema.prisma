@@ -1,0 +1,544 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  AGENT
+  VIEWER
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  EXPIRED
+  ERROR
+  RECONNECT_REQUIRED
+}
+
+enum IntegrationProvider {
+  META
+}
+
+enum RecordStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum LeadSource {
+  META_LEAD_AD
+  MANUAL
+}
+
+enum ConversationChannel {
+  MESSENGER
+  INSTAGRAM
+  WHATSAPP
+  EMAIL
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SenderType {
+  CONTACT
+  USER
+  SYSTEM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum ActivityType {
+  LEAD_CREATED
+  LEAD_ASSIGNED
+  STATUS_CHANGED
+  NOTE_ADDED
+  TAG_ADDED
+  MESSAGE_SENT
+  MESSAGE_RECEIVED
+}
+
+model Organization {
+  id String @id @default(cuid())
+  name String
+  slug String @unique
+  timezone String @default("UTC")
+  planId String?
+  status OrganizationStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships OrganizationUser[]
+  teams Team[]
+  integrations Integration[]
+  pages MetaPage[]
+  forms MetaForm[]
+  leads Lead[]
+  leadStatuses LeadStatus[]
+  contacts Contact[]
+  tags Tag[]
+  notes LeadNote[]
+  activities Activity[]
+  conversations Conversation[]
+  messages Message[]
+  notifications Notification[]
+  auditLogs AuditLog[]
+  webhookEvents WebhookEvent[]
+  invitations OrganizationInvitation[]
+  oauthStates OAuthState[]
+  plan Plan? @relation(fields:[planId],references:[id])
+  subscription Subscription?
+  usageCounters UsageCounter[]
+  automationRules AutomationRule[]
+}
+
+model Plan {
+  id String @id @default(cuid())
+  key String @unique
+  name String
+  leadLimit Int
+  userLimit Int
+  pageLimit Int
+  messageLimit Int
+  features Json
+  active Boolean @default(true)
+  organizations Organization[]
+  subscriptions Subscription[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Subscription {
+  id String @id @default(cuid())
+  organizationId String @unique
+  provider String
+  externalSubscriptionId String?
+  planId String
+  status String
+  currentPeriodEnd DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
+  plan Plan @relation(fields:[planId],references:[id])
+  @@unique([provider,externalSubscriptionId])
+}
+
+model UsageCounter {
+  organizationId String
+  metric String
+  periodStart DateTime
+  periodEnd DateTime
+  value Int @default(0)
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
+  @@id([organizationId,metric,periodStart])
+  @@index([organizationId,periodEnd])
+}
+
+model AutomationRule {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  trigger String @default("LEAD_CREATED")
+  enabled Boolean @default(true)
+  position Int @default(0)
+  conditions Json
+  actions Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
+  @@index([organizationId,enabled,position])
+}
+
+model OAuthState {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  provider IntegrationProvider
+  stateHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, expiresAt])
+}
+
+model OrganizationInvitation {
+  id String @id @default(cuid())
+  organizationId String
+  email String
+  role Role
+  tokenHash String @unique
+  expiresAt DateTime
+  acceptedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, email])
+  @@index([organizationId, expiresAt])
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  passwordHash String
+  authProvider String @default("LOCAL")
+  name String
+  phone String?
+  status UserStatus @default(ACTIVE)
+  isSystemAdmin Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships OrganizationUser[]
+  teamMemberships TeamMember[]
+  assignedLeads Lead[]
+  notes LeadNote[]
+  activities Activity[]
+  notifications Notification[]
+  deviceTokens DeviceToken[]
+  auditLogs AuditLog[]
+  sessions AuthSession[]
+  passwordResetTokens PasswordResetToken[]
+  assignedConversations Conversation[]
+  conversationReads ConversationRead[]
+}
+
+model AuthSession {
+  id String @id @default(cuid())
+  userId String
+  organizationId String
+  refreshTokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, organizationId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model OrganizationUser {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  role Role
+  status UserStatus @default(ACTIVE)
+  joinedAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, userId])
+  @@index([userId, status])
+}
+
+model Team {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members TeamMember[]
+  @@unique([organizationId, name])
+}
+
+model TeamMember {
+  teamId String
+  userId String
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([teamId, userId])
+}
+
+model Integration {
+  id String @id @default(cuid())
+  organizationId String
+  provider IntegrationProvider
+  status IntegrationStatus @default(DISCONNECTED)
+  metadata Json?
+  encryptedCredentials String?
+  lastSuccessAt DateTime?
+  lastErrorAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pages MetaPage[]
+  @@unique([organizationId, provider])
+}
+
+model MetaPage {
+  id String @id @default(cuid())
+  organizationId String
+  integrationId String
+  externalPageId String
+  name String
+  accessTokenReference String?
+  tokenExpiresAt DateTime?
+  status RecordStatus @default(DISABLED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  forms MetaForm[]
+  @@unique([organizationId, externalPageId])
+}
+
+model MetaForm {
+  id String @id @default(cuid())
+  organizationId String
+  metaPageId String
+  externalFormId String
+  name String
+  status RecordStatus @default(DISABLED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  page MetaPage @relation(fields: [metaPageId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, externalFormId])
+  @@index([organizationId, metaPageId])
+}
+
+model LeadStatus {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  key String
+  position Int
+  isTerminal Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads Lead[]
+  @@unique([organizationId, key])
+}
+
+model Lead {
+  id String @id @default(cuid())
+  organizationId String
+  source LeadSource
+  sourceExternalId String
+  externalPageId String?
+  externalFormId String?
+  campaignExternalId String?
+  adExternalId String?
+  name String?
+  email String?
+  phone String?
+  rawDataJson Json?
+  statusId String
+  assignedUserId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  status LeadStatus @relation(fields: [statusId], references: [id])
+  assignedUser User? @relation(fields: [assignedUserId], references: [id])
+  tags LeadTag[]
+  notes LeadNote[]
+  activities Activity[]
+  conversations Conversation[]
+  @@unique([organizationId, source, sourceExternalId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, statusId, createdAt(sort: Desc)])
+  @@index([organizationId, assignedUserId, createdAt(sort: Desc)])
+}
+
+model Contact {
+  id String @id @default(cuid())
+  organizationId String
+  name String?
+  email String?
+  phone String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+}
+
+model Tag {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads LeadTag[]
+  @@unique([organizationId, name])
+}
+
+model LeadTag {
+  leadId String
+  tagId String
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@id([leadId, tagId])
+}
+
+model LeadNote {
+  id String @id @default(cuid())
+  organizationId String
+  leadId String
+  authorUserId String
+  body String
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorUserId], references: [id])
+  @@index([organizationId, leadId, createdAt(sort: Desc)])
+}
+
+model Activity {
+  id String @id @default(cuid())
+  organizationId String
+  leadId String
+  actorUserId String?
+  type ActivityType
+  metadataJson Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id])
+  @@index([organizationId, leadId, createdAt(sort: Desc)])
+}
+
+model Conversation {
+  id String @id @default(cuid())
+  organizationId String
+  leadId String?
+  assignedUserId String?
+  channel ConversationChannel
+  externalConversationId String
+  status ConversationStatus @default(OPEN)
+  lastMessageAt DateTime?
+  unreadCount Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  assignedUser User? @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages Message[]
+  reads ConversationRead[]
+  @@unique([organizationId, channel, externalConversationId])
+  @@index([organizationId, lastMessageAt(sort: Desc)])
+  @@index([organizationId, leadId])
+  @@index([organizationId, assignedUserId, lastMessageAt(sort: Desc)])
+}
+
+model ConversationRead {
+  conversationId String
+  userId String
+  organizationId String
+  lastReadAt DateTime @default(now())
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([conversationId, userId])
+  @@index([organizationId, userId])
+}
+
+model Message {
+  id String @id @default(cuid())
+  organizationId String
+  conversationId String
+  externalMessageId String?
+  direction MessageDirection
+  senderType SenderType
+  senderExternalId String?
+  content String
+  messageType String @default("TEXT")
+  status MessageStatus
+  metadataJson Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, externalMessageId])
+  @@index([organizationId, conversationId, createdAt(sort: Desc)])
+}
+
+model Notification {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  type String
+  title String
+  body String
+  dataJson Json?
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([organizationId, userId, createdAt(sort: Desc)])
+}
+
+model DeviceToken {
+  id String @id @default(cuid())
+  userId String
+  platform String
+  pushToken String @unique
+  lastSeenAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  organizationId String
+  actorUserId String?
+  action String
+  entityType String
+  entityId String?
+  metadataJson Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id])
+  @@index([organizationId, createdAt(sort: Desc)])
+}
+
+model WebhookEvent {
+  id String @id @default(cuid())
+  organizationId String?
+  provider IntegrationProvider
+  providerEventId String
+  payload Json
+  status String @default("RECEIVED")
+  processedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  @@unique([provider, providerEventId])
+  @@index([organizationId, createdAt(sort: Desc)])
+}

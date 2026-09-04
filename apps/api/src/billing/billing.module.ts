@@ -1,0 +1,1 @@
+import { Global,Module } from '@nestjs/common';import { BillingController } from './billing.controller.js';import { PlanLimitsService } from './plan-limits.service.js';@Global()@Module({controllers:[BillingController],providers:[PlanLimitsService],exports:[PlanLimitsService]})export class BillingModule{}

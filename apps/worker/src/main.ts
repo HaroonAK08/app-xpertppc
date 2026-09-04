@@ -1,0 +1,25 @@
+import { PrismaClient } from '@lead-saas/database';
+import { Queue, Worker } from 'bullmq';
+import { Redis } from 'ioredis';
+import { QUEUES, DEFAULT_JOB_OPTIONS } from './queues/names.js';
+import { MetaLeadProcessor } from './processors/meta-leads/processor.js';
+import { PushNotificationProcessor } from './processors/notifications/processor.js';
+import { MessageProcessor } from './processors/messages/processor.js';
+import { MessengerProvider } from './processors/messages/messenger.provider.js';
+import { IncomingMessageProcessor } from './processors/messages/incoming.processor.js';
+import { EmailProcessor } from './processors/email/processor.js';
+const redisUrl=process.env.REDIS_URL; const graphVersion=process.env.META_GRAPH_VERSION; const encryptionKey=process.env.ENCRYPTION_KEY;
+if(!redisUrl||!graphVersion||!encryptionKey) throw new Error('REDIS_URL, META_GRAPH_VERSION and ENCRYPTION_KEY are required');
+if(!/^v\d+\.\d+$/.test(graphVersion)) throw new Error('META_GRAPH_VERSION is invalid');
+const db=new PrismaClient(); const connection=new Redis(redisUrl,{maxRetriesPerRequest:null});
+const pushQueue=new Queue(QUEUES.pushNotifications,{connection,defaultJobOptions:DEFAULT_JOB_OPTIONS});
+const leadProcessor=new MetaLeadProcessor(db,connection,pushQueue,graphVersion,encryptionKey);
+const pushProcessor=new PushNotificationProcessor(db,process.env.EXPO_ACCESS_TOKEN);
+const messageProcessor=new MessageProcessor(db,connection,new MessengerProvider(graphVersion),encryptionKey);
+const incomingProcessor=new IncomingMessageProcessor(db,connection);
+const emailProcessor=new EmailProcessor(process.env.MAIL_DELIVERY_URL,process.env.MAIL_DELIVERY_TOKEN,process.env.MAIL_FROM);
+const workers=[new Worker(QUEUES.metaLeadFetch,(job)=>leadProcessor.process(job),{connection,concurrency:10}),new Worker(QUEUES.metaWebhooks,(job)=>incomingProcessor.process(job),{connection,concurrency:10}),new Worker(QUEUES.pushNotifications,(job)=>pushProcessor.process(job),{connection,concurrency:6}),new Worker(QUEUES.providerMessaging,(job)=>messageProcessor.process(job),{connection,concurrency:6}),new Worker(QUEUES.transactionalEmail,(job)=>emailProcessor.process(job),{connection,concurrency:4})];
+const heartbeat=async()=>connection.set('health:worker:heartbeat',new Date().toISOString(),'EX',45);void heartbeat();const heartbeatTimer=setInterval(()=>void heartbeat(),15_000);
+for(const worker of workers) worker.on('failed',(job,error)=>console.error(JSON.stringify({event:'job.failed',queue:worker.name,jobId:job?.id,message:error.message})));
+async function shutdown(){clearInterval(heartbeatTimer);await Promise.all(workers.map((w)=>w.close()));await pushQueue.close();await connection.quit();await db.$disconnect();}
+process.once('SIGTERM',()=>void shutdown()); process.once('SIGINT',()=>void shutdown());

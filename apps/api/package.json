@@ -1,0 +1,9 @@
+{
+  "name": "@lead-saas/api",
+  "private": true,
+  "scripts": {"dev":"nest start --watch","build":"nest build","start":"node dist/main.js","typecheck":"tsc --noEmit","lint":"tsc --noEmit","pretest":"corepack pnpm --filter @lead-saas/database build","test":"vitest run"},
+  "dependencies": {
+    "@lead-saas/database":"workspace:*","@nestjs/common":"^11.1.6","@nestjs/config":"^4.0.2","@nestjs/core":"^11.1.6","@nestjs/jwt":"^11.0.0","@nestjs/platform-express":"^11.1.6","@nestjs/platform-socket.io":"^11.1.6","@nestjs/websockets":"^11.1.6","argon2":"^0.44.0","bullmq":"^5.58.5","class-transformer":"^0.5.1","class-validator":"^0.14.2","helmet":"^8.1.0","ioredis":"^5.7.0","reflect-metadata":"^0.2.2","rxjs":"^7.8.2","socket.io":"^4.8.1"
+  },
+  "devDependencies":{"@nestjs/cli":"^11.0.10","@nestjs/testing":"^11.1.6","@types/express":"^5.0.3","@types/node":"^24.3.0","supertest":"^7.1.4","typescript":"^5.9.2","vitest":"^3.2.4"}
+}
