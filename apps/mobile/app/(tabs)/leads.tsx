@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -15,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../../src/services/api/client";
+import { flattenUniquePages } from "../../src/lib/pagination";
 import {
   Avatar,
   EmptyState,
@@ -62,6 +64,44 @@ const Choice = ({
     {selected && <Ionicons name="checkmark" size={14} color="#fff" />}
   </Pressable>
 );
+const LeadCard = memo(function LeadCard({ item }: { item: Lead }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${item.name ?? "unnamed lead"}`}
+      style={({ pressed }) => [s.card, pressed && s.pressed]}
+      onPress={() => router.push(`/lead/${item.id}`)}
+    >
+      <Avatar name={item.name} />
+      <View style={s.copy}>
+        <View style={s.row}>
+          <Text numberOfLines={1} style={s.name}>
+            {item.name ?? "Unnamed lead"}
+          </Text>
+          <StatusPill status={item.status.name} />
+        </View>
+        <Text numberOfLines={1} style={s.contact}>
+          {item.email ?? item.phone ?? "No contact details"}
+        </Text>
+        <View style={s.bottom}>
+          <View style={s.assignee}>
+            <Ionicons name="person-outline" size={12} color={colors.subtle} />
+            <Text style={s.meta}>
+              {item.assignedUser?.name ?? "Unassigned"}
+            </Text>
+          </View>
+          <Text style={s.date}>
+            {new Date(item.createdAt).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })}
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={17} color={colors.subtle} />
+    </Pressable>
+  );
+});
 export default function Leads() {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -75,17 +115,17 @@ export default function Leads() {
   }, [search]);
   const statuses = useQuery({
     queryKey: ["lead-statuses"],
-    queryFn: () =>
-      api<Array<{ id: string; name: string }>>("/v1/lead-statuses"),
+    queryFn: ({ signal }) =>
+      api<Array<{ id: string; name: string }>>("/v1/lead-statuses", { signal }),
   });
   const members = useQuery({
     queryKey: ["team"],
-    queryFn: () => api<Member[]>("/v1/team"),
+    queryFn: ({ signal }) => api<Member[]>("/v1/team", { signal }),
     retry: false,
   });
   const tags = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<Tag[]>("/v1/tags"),
+    queryFn: ({ signal }) => api<Tag[]>("/v1/tags", { signal }),
   });
   const suffix = useMemo(
     () =>
@@ -94,14 +134,18 @@ export default function Leads() {
   );
   const query = useInfiniteQuery({
     queryKey: ["leads", { debounced, statusId, filters }],
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api<Page>(
         `/v1/leads?limit=25${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}${suffix}`,
+        { signal },
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
-  const leads = query.data?.pages.flatMap((p) => p.data) ?? [];
+  const leads = useMemo(
+    () => flattenUniquePages(query.data?.pages),
+    [query.data],
+  );
   const activeCount = Object.entries(filters).filter(([key, value]) =>
     key === "sort" ? value !== "newest" : !!value,
   ).length;
@@ -109,6 +153,14 @@ export default function Leads() {
     setDraft(filters);
     setOpen(true);
   };
+  const renderLead = useCallback(
+    ({ item }: { item: Lead }) => <LeadCard item={item} />,
+    [],
+  );
+  const loadMore = useCallback(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage)
+      void query.fetchNextPage();
+  }, [query]);
   return (
     <SafeAreaView style={s.page}>
       <View style={s.header}>
@@ -195,13 +247,17 @@ export default function Leads() {
       <FlatList
         data={leads}
         keyExtractor={(x) => x.id}
+        initialNumToRender={9}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={45}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === "android"}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         refreshing={query.isRefetching}
         onRefresh={() => void query.refetch()}
         onEndReachedThreshold={0.35}
-        onEndReached={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage)
-            void query.fetchNextPage();
-        }}
+        onEndReached={loadMore}
         contentContainerStyle={[s.list, !leads.length && s.listEmpty]}
         ListEmptyComponent={
           query.isLoading ? (
@@ -225,44 +281,7 @@ export default function Leads() {
             />
           )
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [s.card, pressed && s.pressed]}
-            onPress={() => router.push(`/lead/${item.id}`)}
-          >
-            <Avatar name={item.name} />
-            <View style={s.copy}>
-              <View style={s.row}>
-                <Text numberOfLines={1} style={s.name}>
-                  {item.name ?? "Unnamed lead"}
-                </Text>
-                <StatusPill status={item.status.name} />
-              </View>
-              <Text numberOfLines={1} style={s.contact}>
-                {item.email ?? item.phone ?? "No contact details"}
-              </Text>
-              <View style={s.bottom}>
-                <View style={s.assignee}>
-                  <Ionicons
-                    name="person-outline"
-                    size={12}
-                    color={colors.subtle}
-                  />
-                  <Text style={s.meta}>
-                    {item.assignedUser?.name ?? "Unassigned"}
-                  </Text>
-                </View>
-                <Text style={s.date}>
-                  {new Date(item.createdAt).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={17} color={colors.subtle} />
-          </Pressable>
-        )}
+        renderItem={renderLead}
         ListFooterComponent={
           query.isFetchingNextPage ? (
             <ActivityIndicator color={colors.blue} style={{ margin: 18 }} />

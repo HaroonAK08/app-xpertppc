@@ -1,6 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps, ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { colors, radius, shadow, statusColor } from "./theme";
 type IconName = ComponentProps<typeof Ionicons>["name"];
 export function BrandMark({ compact = false }: { compact?: boolean }) {
@@ -117,7 +126,38 @@ export function Skeleton({
   width?: number | `${number}%`;
   height?: number;
 }) {
-  return <View style={[s.skeleton, { width, height }]} />;
+  const opacity = useRef(new Animated.Value(0.45)).current;
+  useEffect(() => {
+    let animation: Animated.CompositeAnimation | undefined;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (reduced) return;
+      animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.85,
+            duration: 700,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0.45,
+            duration: 700,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      animation.start();
+    });
+    return () => animation?.stop();
+  }, [opacity]);
+  return (
+    <Animated.View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[s.skeleton, { width, height, opacity }]}
+    />
+  );
 }
 export const ui = {
   card: {

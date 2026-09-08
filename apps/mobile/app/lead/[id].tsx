@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -59,29 +59,47 @@ export default function LeadDetail() {
   const [note, setNote] = useState("");
   const query = useQuery({
     queryKey: ["leads", id],
-    queryFn: () => api<Lead>(`/v1/leads/${id}`),
+    queryFn: ({ signal }) => api<Lead>(`/v1/leads/${id}`, { signal }),
     enabled: !!id,
   });
   const statuses = useQuery({
     queryKey: ["lead-statuses"],
-    queryFn: () => api<Status[]>("/v1/lead-statuses"),
+    queryFn: ({ signal }) => api<Status[]>("/v1/lead-statuses", { signal }),
   });
   const tags = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<Tag[]>("/v1/tags"),
+    queryFn: ({ signal }) => api<Tag[]>("/v1/tags", { signal }),
   });
   const members = useQuery({
     queryKey: ["team"],
-    queryFn: () => api<Member[]>("/v1/team"),
+    queryFn: ({ signal }) => api<Member[]>("/v1/team", { signal }),
   });
-  const refresh = () => client.invalidateQueries({ queryKey: ["leads", id] });
+  const leadKey = ["leads", id] as const;
+  const refresh = async () => {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: leadKey }),
+      client.invalidateQueries({ queryKey: ["leads"], exact: false }),
+    ]);
+  };
   const update = useMutation({
     mutationFn: (statusId: string) =>
       api(`/v1/leads/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ statusId }),
       }),
-    onSuccess: refresh,
+    onMutate: async (statusId) => {
+      await client.cancelQueries({ queryKey: leadKey });
+      const previous = client.getQueryData<Lead>(leadKey);
+      const status = statuses.data?.find((item) => item.id === statusId);
+      if (status)
+        client.setQueryData<Lead>(leadKey, (lead) =>
+          lead ? { ...lead, status } : lead,
+        );
+      return { previous };
+    },
+    onError: (_error, _value, context) =>
+      client.setQueryData(leadKey, context?.previous),
+    onSettled: refresh,
   });
   const assign = useMutation({
     mutationFn: (userId: string) =>
@@ -89,7 +107,19 @@ export default function LeadDetail() {
         method: "POST",
         body: JSON.stringify({ userId }),
       }),
-    onSuccess: refresh,
+    onMutate: async (userId) => {
+      await client.cancelQueries({ queryKey: leadKey });
+      const previous = client.getQueryData<Lead>(leadKey);
+      const member = members.data?.find((item) => item.user.id === userId);
+      if (member)
+        client.setQueryData<Lead>(leadKey, (lead) =>
+          lead ? { ...lead, assignedUser: { name: member.user.name } } : lead,
+        );
+      return { previous };
+    },
+    onError: (_error, _value, context) =>
+      client.setQueryData(leadKey, context?.previous),
+    onSettled: refresh,
   });
   const addTag = useMutation({
     mutationFn: (tagId: string) =>
@@ -97,12 +127,41 @@ export default function LeadDetail() {
         method: "POST",
         body: JSON.stringify({ tagIds: [tagId] }),
       }),
-    onSuccess: refresh,
+    onMutate: async (tagId) => {
+      await client.cancelQueries({ queryKey: leadKey });
+      const previous = client.getQueryData<Lead>(leadKey);
+      const tag = tags.data?.find((item) => item.id === tagId);
+      if (tag)
+        client.setQueryData<Lead>(leadKey, (lead) =>
+          lead && !lead.tags.some((item) => item.tag.id === tagId)
+            ? { ...lead, tags: [...lead.tags, { tag }] }
+            : lead,
+        );
+      return { previous };
+    },
+    onError: (_error, _value, context) =>
+      client.setQueryData(leadKey, context?.previous),
+    onSettled: refresh,
   });
   const removeTag = useMutation({
     mutationFn: (tagId: string) =>
       api(`/v1/leads/${id}/tags/${tagId}`, { method: "DELETE" }),
-    onSuccess: refresh,
+    onMutate: async (tagId) => {
+      await client.cancelQueries({ queryKey: leadKey });
+      const previous = client.getQueryData<Lead>(leadKey);
+      client.setQueryData<Lead>(leadKey, (lead) =>
+        lead
+          ? {
+              ...lead,
+              tags: lead.tags.filter((item) => item.tag.id !== tagId),
+            }
+          : lead,
+      );
+      return { previous };
+    },
+    onError: (_error, _value, context) =>
+      client.setQueryData(leadKey, context?.previous),
+    onSettled: refresh,
   });
   const addNote = useMutation({
     mutationFn: (body: string) =>
@@ -116,7 +175,10 @@ export default function LeadDetail() {
     },
   });
   const lead = query.data;
-  const selected = new Set(lead?.tags.map((x) => x.tag.id));
+  const selected = useMemo(
+    () => new Set(lead?.tags.map((x) => x.tag.id)),
+    [lead?.tags],
+  );
   return (
     <SafeAreaView style={s.page}>
       <Stack.Screen
@@ -228,6 +290,12 @@ export default function LeadDetail() {
               {statuses.data?.map((status) => (
                 <Pressable
                   key={status.id}
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    selected: status.id === lead.status.id,
+                    busy: update.isPending,
+                  }}
+                  disabled={update.isPending}
                   style={[s.chip, status.id === lead.status.id && s.chipActive]}
                   onPress={() => update.mutate(status.id)}
                 >
@@ -254,6 +322,10 @@ export default function LeadDetail() {
                 .map((m) => (
                   <Pressable
                     key={m.user.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Assign to ${m.user.name}`}
+                    accessibilityState={{ busy: assign.isPending }}
+                    disabled={assign.isPending}
                     style={s.personChip}
                     onPress={() => assign.mutate(m.user.id)}
                   >
@@ -268,6 +340,12 @@ export default function LeadDetail() {
               {tags.data?.map((tag) => (
                 <Pressable
                   key={tag.id}
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    selected: selected.has(tag.id),
+                    busy: addTag.isPending || removeTag.isPending,
+                  }}
+                  disabled={addTag.isPending || removeTag.isPending}
                   style={[s.chip, selected.has(tag.id) && s.chipActive]}
                   onPress={() =>
                     selected.has(tag.id)

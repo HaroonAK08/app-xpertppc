@@ -18,17 +18,30 @@ export function connectRealtime(
     transports: ["websocket"],
     reconnection: true,
   });
+  const pending = new Set<"leads" | "conversations" | "notifications">();
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = (key: "leads" | "conversations" | "notifications") => {
+    pending.add(key);
+    if (flushTimer) return;
+    // Coalesce webhook bursts into a single cache update and render pass.
+    flushTimer = setTimeout(() => {
+      for (const queryKey of pending)
+        void queryClient.invalidateQueries({ queryKey: [queryKey] });
+      pending.clear();
+      flushTimer = undefined;
+    }, 120);
+  };
   for (const event of events)
     socket.on(event, () => {
-      if (event.startsWith("lead."))
-        void queryClient.invalidateQueries({ queryKey: ["leads"] });
-      if (event.startsWith("message."))
-        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      if (event === "notification.created")
-        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      if (event.startsWith("lead.")) schedule("leads");
+      if (event.startsWith("message.")) schedule("conversations");
+      if (event === "notification.created") schedule("notifications");
     });
   socket.on("connect", () => {
-    void queryClient.invalidateQueries();
+    void queryClient.refetchQueries({ type: "active" });
   });
-  return () => socket.disconnect();
+  return () => {
+    if (flushTimer) clearTimeout(flushTimer);
+    socket.disconnect();
+  };
 }

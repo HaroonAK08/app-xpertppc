@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
+  type InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -19,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../../src/services/api/client";
+import { flattenUniquePages } from "../../src/lib/pagination";
 import { EmptyState } from "../../src/ui/components";
 import { colors, radius } from "../../src/ui/theme";
 type Message = {
@@ -29,15 +31,73 @@ type Message = {
   createdAt: string;
 };
 type Page = { data: Message[]; nextCursor: string | null };
+const MessageBubble = memo(function MessageBubble({
+  item,
+  retrying,
+  onRetry,
+}: {
+  item: Message;
+  retrying: boolean;
+  onRetry: (id: string) => void;
+}) {
+  return (
+    <View
+      accessibilityLabel={`${item.direction === "OUTBOUND" ? "Sent" : "Received"} message: ${item.content}`}
+      style={[
+        s.bubble,
+        item.direction === "OUTBOUND" ? s.outbound : s.inbound,
+        item.status === "PENDING" && s.pending,
+      ]}
+    >
+      <Text style={[s.message, item.direction === "OUTBOUND" && s.outText]}>
+        {item.content}
+      </Text>
+      <View style={s.messageMeta}>
+        <Text style={[s.time, item.direction === "OUTBOUND" && s.outTime]}>
+          {new Date(item.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </Text>
+        {item.direction === "OUTBOUND" && (
+          <Ionicons
+            name={
+              item.status === "FAILED"
+                ? "alert-circle"
+                : item.status === "PENDING"
+                  ? "time-outline"
+                  : "checkmark-done"
+            }
+            size={13}
+            color={item.status === "FAILED" ? "#FFD0D2" : "#B9DCFF"}
+          />
+        )}
+      </View>
+      {item.status === "FAILED" && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry failed message"
+          disabled={retrying}
+          style={s.retryButton}
+          onPress={() => onRetry(item.id)}
+        >
+          <Ionicons name="refresh" size={13} color="#fff" />
+          <Text style={s.retry}>Retry message</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 export default function Conversation() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const client = useQueryClient();
   const [text, setText] = useState("");
   const query = useInfiniteQuery({
     queryKey: ["conversations", id, "messages"],
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api<Page>(
         `/v1/conversations/${id}/messages${pageParam ? `?cursor=${pageParam}` : ""}`,
+        { signal },
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (p) => p.nextCursor,
@@ -54,9 +114,54 @@ export default function Conversation() {
         method: "POST",
         body: JSON.stringify({ content }),
       }),
-    onSuccess: () => {
+    onMutate: async (content) => {
+      const key = ["conversations", id, "messages"] as const;
+      await client.cancelQueries({ queryKey: key });
+      const previous = client.getQueryData<InfiniteData<Page>>(key);
+      const optimisticId = `pending-${Date.now()}`;
+      const optimistic: Message = {
+        id: optimisticId,
+        content,
+        direction: "OUTBOUND",
+        status: "PENDING",
+        createdAt: new Date().toISOString(),
+      };
+      client.setQueryData<InfiniteData<Page>>(key, (current) => {
+        if (!current) return current;
+        const [first, ...rest] = current.pages;
+        if (!first) return current;
+        return {
+          ...current,
+          pages: [{ ...first, data: [optimistic, ...first.data] }, ...rest],
+        };
+      });
       setText("");
-      void refresh();
+      return { previous, optimisticId, content };
+    },
+    onError: (_error, _content, context) => {
+      if (context?.previous)
+        client.setQueryData(
+          ["conversations", id, "messages"],
+          context.previous,
+        );
+      if (context?.content) setText(context.content);
+    },
+    onSuccess: (message, _content, context) => {
+      const key = ["conversations", id, "messages"] as const;
+      client.setQueryData<InfiniteData<Page>>(key, (current) =>
+        current
+          ? {
+              ...current,
+              pages: current.pages.map((page) => ({
+                ...page,
+                data: page.data.map((item) =>
+                  item.id === context?.optimisticId ? message : item,
+                ),
+              })),
+            }
+          : current,
+      );
+      void client.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
   const retry = useMutation({
@@ -66,7 +171,24 @@ export default function Conversation() {
       }),
     onSuccess: () => void refresh(),
   });
-  const messages = query.data?.pages.flatMap((p) => p.data) ?? [];
+  const messages = useMemo(
+    () => flattenUniquePages(query.data?.pages),
+    [query.data],
+  );
+  const retryMessage = useCallback(
+    (messageId: string) => retry.mutate(messageId),
+    [retry],
+  );
+  const renderMessage = useCallback(
+    ({ item }: { item: Message }) => (
+      <MessageBubble
+        item={item}
+        retrying={retry.isPending}
+        onRetry={retryMessage}
+      />
+    ),
+    [retry.isPending, retryMessage],
+  );
   return (
     <SafeAreaView style={s.page}>
       <Stack.Screen
@@ -90,6 +212,11 @@ export default function Conversation() {
             inverted
             data={messages}
             keyExtractor={(x) => x.id}
+            initialNumToRender={14}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={40}
+            windowSize={9}
+            removeClippedSubviews={Platform.OS === "android"}
             contentContainerStyle={[s.list, !messages.length && s.emptyList]}
             onEndReached={() => {
               if (query.hasNextPage) void query.fetchNextPage();
@@ -101,54 +228,7 @@ export default function Conversation() {
                 body="Supported messages will appear here."
               />
             }
-            renderItem={({ item }) => (
-              <View
-                style={[
-                  s.bubble,
-                  item.direction === "OUTBOUND" ? s.outbound : s.inbound,
-                ]}
-              >
-                <Text
-                  style={[
-                    s.message,
-                    item.direction === "OUTBOUND" && s.outText,
-                  ]}
-                >
-                  {item.content}
-                </Text>
-                <View style={s.messageMeta}>
-                  <Text
-                    style={[s.time, item.direction === "OUTBOUND" && s.outTime]}
-                  >
-                    {new Date(item.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                  {item.direction === "OUTBOUND" && (
-                    <Ionicons
-                      name={
-                        item.status === "FAILED"
-                          ? "alert-circle"
-                          : "checkmark-done"
-                      }
-                      size={13}
-                      color={item.status === "FAILED" ? "#FFD0D2" : "#B9DCFF"}
-                    />
-                  )}
-                </View>
-                {item.status === "FAILED" && (
-                  <Pressable
-                    disabled={retry.isPending}
-                    style={s.retryButton}
-                    onPress={() => retry.mutate(item.id)}
-                  >
-                    <Ionicons name="refresh" size={13} color="#fff" />
-                    <Text style={s.retry}>Retry message</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
+            renderItem={renderMessage}
           />
         )}
         <View style={s.composerWrap}>
@@ -204,6 +284,7 @@ const s = StyleSheet.create({
     alignSelf: "flex-end",
     borderBottomRightRadius: 5,
   },
+  pending: { opacity: 0.76 },
   message: { fontSize: 14, lineHeight: 20, color: colors.ink },
   outText: { color: "#fff" },
   messageMeta: {

@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../../src/services/api/client";
+import { flattenUniquePages } from "../../src/lib/pagination";
 import { Avatar, EmptyState, ScreenHeader } from "../../src/ui/components";
 import { colors, radius } from "../../src/ui/theme";
 type Filter = "all" | "unread" | "mine";
@@ -33,18 +35,79 @@ const formatTime = (value: string | null) => {
     ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : date.toLocaleDateString([], { month: "short", day: "numeric" });
 };
+const ConversationCard = memo(function ConversationCard({
+  item,
+}: {
+  item: Conversation;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.unread ? "Unread conversation" : "Conversation"} with ${item.lead?.name ?? "contact"}`}
+      style={({ pressed }) => [
+        s.card,
+        item.unread && s.unreadCard,
+        pressed && s.pressed,
+      ]}
+      onPress={() => router.push(`/conversation/${item.id}`)}
+    >
+      <View>
+        <Avatar name={item.lead?.name} />
+        {Boolean(item.unread) && <View style={s.unreadDot} />}
+      </View>
+      <View style={s.copy}>
+        <View style={s.row}>
+          <Text numberOfLines={1} style={[s.name, item.unread && s.bold]}>
+            {item.lead?.name ?? "Messenger contact"}
+          </Text>
+          <Text style={[s.time, item.unread && s.timeUnread]}>
+            {formatTime(item.lastMessageAt)}
+          </Text>
+        </View>
+        <Text
+          numberOfLines={1}
+          style={[s.preview, item.unread && s.previewUnread]}
+        >
+          {item.messages[0]?.content ?? "No messages"}
+        </Text>
+        <View style={s.metaRow}>
+          <View style={s.channel}>
+            <Ionicons name="logo-facebook" size={12} color={colors.blue} />
+            <Text style={s.meta}>{item.channel}</Text>
+          </View>
+          <Text style={s.meta}>·</Text>
+          <Text numberOfLines={1} style={s.meta}>
+            {item.assignedUser?.name ?? "Unassigned"}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
 export default function Inbox() {
   const [filter, setFilter] = useState<Filter>("all");
   const query = useInfiniteQuery({
     queryKey: ["conversations", filter],
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api<Page>(
         `/v1/conversations?filter=${filter}${pageParam ? `&cursor=${pageParam}` : ""}`,
+        { signal },
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (p) => p.nextCursor,
   });
-  const rows = query.data?.pages.flatMap((p) => p.data) ?? [];
+  const rows = useMemo(
+    () => flattenUniquePages(query.data?.pages),
+    [query.data],
+  );
+  const renderConversation = useCallback(
+    ({ item }: { item: Conversation }) => <ConversationCard item={item} />,
+    [],
+  );
+  const loadMore = useCallback(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage)
+      void query.fetchNextPage();
+  }, [query]);
   return (
     <SafeAreaView style={s.page}>
       <View style={s.header}>
@@ -81,13 +144,16 @@ export default function Inbox() {
       <FlatList
         data={rows}
         keyExtractor={(x) => x.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={45}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === "android"}
         contentContainerStyle={[s.list, !rows.length && s.listEmpty]}
         refreshing={query.isRefetching}
         onRefresh={() => void query.refetch()}
         onEndReachedThreshold={0.35}
-        onEndReached={() => {
-          if (query.hasNextPage) void query.fetchNextPage();
-        }}
+        onEndReached={loadMore}
         ListEmptyComponent={
           query.isLoading ? (
             <ActivityIndicator color={colors.blue} />
@@ -111,51 +177,7 @@ export default function Inbox() {
             />
           )
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [
-              s.card,
-              item.unread && s.unreadCard,
-              pressed && s.pressed,
-            ]}
-            onPress={() => router.push(`/conversation/${item.id}`)}
-          >
-            <View>
-              <Avatar name={item.lead?.name} />
-              {Boolean(item.unread) && <View style={s.unreadDot} />}
-            </View>
-            <View style={s.copy}>
-              <View style={s.row}>
-                <Text numberOfLines={1} style={[s.name, item.unread && s.bold]}>
-                  {item.lead?.name ?? "Messenger contact"}
-                </Text>
-                <Text style={[s.time, item.unread && s.timeUnread]}>
-                  {formatTime(item.lastMessageAt)}
-                </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                style={[s.preview, item.unread && s.previewUnread]}
-              >
-                {item.messages[0]?.content ?? "No messages"}
-              </Text>
-              <View style={s.metaRow}>
-                <View style={s.channel}>
-                  <Ionicons
-                    name="logo-facebook"
-                    size={12}
-                    color={colors.blue}
-                  />
-                  <Text style={s.meta}>{item.channel}</Text>
-                </View>
-                <Text style={s.meta}>·</Text>
-                <Text numberOfLines={1} style={s.meta}>
-                  {item.assignedUser?.name ?? "Unassigned"}
-                </Text>
-              </View>
-            </View>
-          </Pressable>
-        )}
+        renderItem={renderConversation}
         ListFooterComponent={
           query.isFetchingNextPage ? (
             <ActivityIndicator color={colors.blue} />

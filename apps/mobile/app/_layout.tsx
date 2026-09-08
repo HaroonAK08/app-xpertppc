@@ -9,16 +9,22 @@ import {
 } from "../src/services/push/register";
 import { StatusBar } from "expo-status-bar";
 import { colors } from "../src/ui/theme";
+import { bindQueryLifecycle } from "../src/services/query/lifecycle";
 export default function RootLayout() {
   const [client] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
-            gcTime: 10 * 60_000,
-            retry: 2,
+            staleTime: 45_000,
+            gcTime: 30 * 60_000,
+            retry: (failureCount, error) =>
+              failureCount < 2 &&
+              !error.message.toLowerCase().includes("access"),
+            retryDelay: (attempt) => Math.min(700 * 2 ** attempt, 5_000),
             refetchOnReconnect: true,
+            refetchOnWindowFocus: true,
+            networkMode: "offlineFirst",
           },
           mutations: { retry: 0 },
         },
@@ -28,7 +34,12 @@ export default function RootLayout() {
   const hydrate = useSessionStore((state) => state.hydrate);
   useEffect(() => {
     void hydrate();
-    return listenForPushNavigation();
+    const unbindQueries = bindQueryLifecycle();
+    const unbindPush = listenForPushNavigation();
+    return () => {
+      unbindQueries();
+      unbindPush();
+    };
   }, [hydrate]);
   useEffect(
     () => (token ? connectRealtime(token, client) : undefined),

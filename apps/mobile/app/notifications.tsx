@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
+import { memo, useCallback } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -22,27 +24,105 @@ type Notification = {
   readAt: string | null;
   createdAt: string;
 };
+const NotificationRow = memo(function NotificationRow({
+  item,
+  onOpen,
+}: {
+  item: Notification;
+  onOpen: (item: Notification) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.readAt ? "" : "Unread "}notification: ${item.title}`}
+      onPress={() => onOpen(item)}
+      style={({ pressed }) => [
+        s.item,
+        !item.readAt && s.unread,
+        pressed && s.pressed,
+      ]}
+    >
+      <View style={[s.icon, !item.readAt && s.iconUnread]}>
+        <Ionicons
+          name={
+            item.type.includes("LEAD")
+              ? "person-add-outline"
+              : "notifications-outline"
+          }
+          size={20}
+          color={colors.blue}
+        />
+      </View>
+      <View style={s.copy}>
+        <View style={s.row}>
+          <Text numberOfLines={1} style={[s.title, !item.readAt && s.bold]}>
+            {item.title}
+          </Text>
+          <Text style={s.time}>
+            {new Date(item.createdAt).toLocaleDateString([], {
+              month: "short",
+              day: "numeric",
+            })}
+          </Text>
+        </View>
+        <Text style={s.body}>{item.body}</Text>
+      </View>
+      {!item.readAt && <View style={s.dot} />}
+    </Pressable>
+  );
+});
 export default function Notifications() {
   const cache = useQueryClient();
   const query = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => api<Notification[]>("/v1/notifications"),
+    queryFn: ({ signal }) =>
+      api<Notification[]>("/v1/notifications", { signal }),
   });
   const refresh = () =>
     cache.invalidateQueries({ queryKey: ["notifications"] });
   const read = useMutation({
     mutationFn: (id: string) =>
       api(`/v1/notifications/${id}/read`, { method: "POST" }),
-    onSuccess: () => void refresh(),
+    onMutate: (id) => {
+      const previous = cache.getQueryData<Notification[]>(["notifications"]);
+      cache.setQueryData<Notification[]>(["notifications"], (items) =>
+        items?.map((item) =>
+          item.id === id ? { ...item, readAt: new Date().toISOString() } : item,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, _id, context) =>
+      cache.setQueryData(["notifications"], context?.previous),
+    onSettled: () => void refresh(),
   });
   const readAll = useMutation({
     mutationFn: () => api("/v1/notifications/read-all", { method: "POST" }),
-    onSuccess: () => void refresh(),
+    onMutate: () => {
+      const previous = cache.getQueryData<Notification[]>(["notifications"]);
+      const now = new Date().toISOString();
+      cache.setQueryData<Notification[]>(["notifications"], (items) =>
+        items?.map((item) => ({ ...item, readAt: item.readAt ?? now })),
+      );
+      return { previous };
+    },
+    onError: (_error, _value, context) =>
+      cache.setQueryData(["notifications"], context?.previous),
+    onSettled: () => void refresh(),
   });
-  const open = (item: Notification) => {
-    if (!item.readAt) read.mutate(item.id);
-    if (item.dataJson?.leadId) router.push(`/lead/${item.dataJson.leadId}`);
-  };
+  const open = useCallback(
+    (item: Notification) => {
+      if (!item.readAt) read.mutate(item.id);
+      if (item.dataJson?.leadId) router.push(`/lead/${item.dataJson.leadId}`);
+    },
+    [read],
+  );
+  const renderNotification = useCallback(
+    ({ item }: { item: Notification }) => (
+      <NotificationRow item={item} onOpen={open} />
+    ),
+    [open],
+  );
   const unread = query.data?.filter((x) => !x.readAt).length ?? 0;
   return (
     <SafeAreaView style={s.page}>
@@ -76,6 +156,11 @@ export default function Notifications() {
       <FlatList
         data={query.data ?? []}
         keyExtractor={(x) => x.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={45}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === "android"}
         refreshing={query.isRefetching}
         onRefresh={() => void query.refetch()}
         contentContainerStyle={[s.list, !query.data?.length && s.empty]}
@@ -100,46 +185,7 @@ export default function Notifications() {
             />
           )
         }
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => open(item)}
-            style={({ pressed }) => [
-              s.item,
-              !item.readAt && s.unread,
-              pressed && s.pressed,
-            ]}
-          >
-            <View style={[s.icon, !item.readAt && s.iconUnread]}>
-              <Ionicons
-                name={
-                  item.type.includes("LEAD")
-                    ? "person-add-outline"
-                    : "notifications-outline"
-                }
-                size={20}
-                color={colors.blue}
-              />
-            </View>
-            <View style={s.copy}>
-              <View style={s.row}>
-                <Text
-                  numberOfLines={1}
-                  style={[s.title, !item.readAt && s.bold]}
-                >
-                  {item.title}
-                </Text>
-                <Text style={s.time}>
-                  {new Date(item.createdAt).toLocaleDateString([], {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-              </View>
-              <Text style={s.body}>{item.body}</Text>
-            </View>
-            {!item.readAt && <View style={s.dot} />}
-          </Pressable>
-        )}
+        renderItem={renderNotification}
       />
     </SafeAreaView>
   );
