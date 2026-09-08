@@ -1,5 +1,498 @@
-import { Ionicons } from '@expo/vector-icons';import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';import { Stack,useLocalSearchParams } from 'expo-router';import { useState } from 'react';import { ActivityIndicator,Linking,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';import { api } from '../../src/services/api/client';import { Avatar,EmptyState,StatusPill } from '../../src/ui/components';import { colors,radius } from '../../src/ui/theme';
-type Status={id:string;name:string};type Tag={id:string;name:string};type Member={role:string;user:{id:string;name:string}};type Lead={id:string;name:string|null;email:string|null;phone:string|null;source:string;externalPageId?:string|null;externalFormId?:string|null;campaignExternalId?:string|null;adExternalId?:string|null;createdAt:string;status:{id:string;name:string};assignedUser?:{name:string}|null;tags:Array<{tag:Tag}>;notes:Array<{id:string;body:string;createdAt:string;author?:{name:string}}>;activities:Array<{id:string;type:string;createdAt:string}>};
-const Section=({title,children}:{title:string;children:React.ReactNode})=><View style={s.section}><Text style={s.sectionLabel}>{title}</Text>{children}</View>;
-export default function LeadDetail(){const{id}=useLocalSearchParams<{id:string}>();const client=useQueryClient();const[note,setNote]=useState('');const query=useQuery({queryKey:['leads',id],queryFn:()=>api<Lead>(`/v1/leads/${id}`),enabled:!!id});const statuses=useQuery({queryKey:['lead-statuses'],queryFn:()=>api<Status[]>('/v1/lead-statuses')});const tags=useQuery({queryKey:['tags'],queryFn:()=>api<Tag[]>('/v1/tags')});const members=useQuery({queryKey:['team'],queryFn:()=>api<Member[]>('/v1/team')});const refresh=()=>client.invalidateQueries({queryKey:['leads',id]});const update=useMutation({mutationFn:(statusId:string)=>api(`/v1/leads/${id}`,{method:'PATCH',body:JSON.stringify({statusId})}),onSuccess:refresh});const assign=useMutation({mutationFn:(userId:string)=>api(`/v1/leads/${id}/assign`,{method:'POST',body:JSON.stringify({userId})}),onSuccess:refresh});const addTag=useMutation({mutationFn:(tagId:string)=>api(`/v1/leads/${id}/tags`,{method:'POST',body:JSON.stringify({tagIds:[tagId]})}),onSuccess:refresh});const removeTag=useMutation({mutationFn:(tagId:string)=>api(`/v1/leads/${id}/tags/${tagId}`,{method:'DELETE'}),onSuccess:refresh});const addNote=useMutation({mutationFn:(body:string)=>api(`/v1/leads/${id}/notes`,{method:'POST',body:JSON.stringify({body})}),onSuccess:()=>{setNote('');void refresh()}});const lead=query.data;const selected=new Set(lead?.tags.map(x=>x.tag.id));return <SafeAreaView style={s.page}><Stack.Screen options={{headerShown:true,title:'Lead profile',headerTintColor:colors.ink,headerShadowVisible:false,headerStyle:{backgroundColor:colors.canvas}}}/>{query.isLoading?<ActivityIndicator color={colors.blue} style={{marginTop:50}}/>:query.isError||!lead?<EmptyState icon="alert-circle-outline" title="Lead unavailable" body="This lead could not be loaded or you no longer have access."/>:<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}><View style={s.profile}><Avatar name={lead.name} size={64}/><Text style={s.name}>{lead.name??'Unnamed lead'}</Text><StatusPill status={lead.status.name}/><Text style={s.added}>Added {new Date(lead.createdAt).toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})}</Text></View><View style={s.actions}><Pressable disabled={!lead.phone} onPress={()=>lead.phone&&Linking.openURL(`tel:${lead.phone}`)} style={[s.action,!lead.phone&&s.disabled]}><View style={[s.actionIcon,{backgroundColor:colors.greenSoft}]}><Ionicons name="call" size={19} color="#078451"/></View><Text style={s.actionText}>Call</Text></Pressable><Pressable disabled={!lead.phone} onPress={()=>lead.phone&&Linking.openURL(`sms:${lead.phone}`)} style={[s.action,!lead.phone&&s.disabled]}><View style={[s.actionIcon,{backgroundColor:colors.blueSoft}]}><Ionicons name="chatbubble" size={19} color={colors.blue}/></View><Text style={s.actionText}>Message</Text></Pressable><Pressable disabled={!lead.email} onPress={()=>lead.email&&Linking.openURL(`mailto:${lead.email}`)} style={[s.action,!lead.email&&s.disabled]}><View style={[s.actionIcon,{backgroundColor:'#F1ECFF'}]}><Ionicons name="mail" size={19} color="#7656D8"/></View><Text style={s.actionText}>Email</Text></Pressable></View><View style={s.card}><View style={s.infoRow}><Ionicons name="mail-outline" size={18} color={colors.blue}/><View><Text style={s.infoLabel}>EMAIL</Text><Text style={s.infoValue}>{lead.email??'Not provided'}</Text></View></View><View style={s.rule}/><View style={s.infoRow}><Ionicons name="call-outline" size={18} color={colors.blue}/><View><Text style={s.infoLabel}>PHONE</Text><Text style={s.infoValue}>{lead.phone??'Not provided'}</Text></View></View><View style={s.rule}/><View style={s.infoRow}><Ionicons name="person-outline" size={18} color={colors.blue}/><View><Text style={s.infoLabel}>OWNER</Text><Text style={s.infoValue}>{lead.assignedUser?.name??'Unassigned'}</Text></View></View></View><Section title="PIPELINE STATUS"><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>{statuses.data?.map(status=><Pressable key={status.id} style={[s.chip,status.id===lead.status.id&&s.chipActive]} onPress={()=>update.mutate(status.id)}><Text style={[s.chipText,status.id===lead.status.id&&s.chipTextActive]}>{status.name}</Text></Pressable>)}</ScrollView></Section><Section title="ASSIGN OWNER"><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>{members.data?.filter(m=>m.role!=='VIEWER').map(m=><Pressable key={m.user.id} style={s.personChip} onPress={()=>assign.mutate(m.user.id)}><Avatar name={m.user.name} size={27}/><Text style={s.personText}>{m.user.name}</Text></Pressable>)}</ScrollView></Section><Section title="TAGS"><View style={s.chips}>{tags.data?.map(tag=><Pressable key={tag.id} style={[s.chip,selected.has(tag.id)&&s.chipActive]} onPress={()=>selected.has(tag.id)?removeTag.mutate(tag.id):addTag.mutate(tag.id)}><Text style={[s.chipText,selected.has(tag.id)&&s.chipTextActive]}># {tag.name}</Text></Pressable>)}</View></Section><Section title="ADD NOTE"><View style={s.noteComposer}><TextInput style={s.noteInput} value={note} onChangeText={setNote} placeholder="Add context for your team…" placeholderTextColor={colors.subtle} multiline/><Pressable style={[s.noteButton,!note.trim()&&s.disabled]} disabled={!note.trim()||addNote.isPending} onPress={()=>addNote.mutate(note.trim())}><Ionicons name="arrow-up" size={20} color="#fff"/></Pressable></View></Section><Section title="NOTES">{lead.notes.length?lead.notes.map(n=><View key={n.id} style={s.note}><View style={s.noteLine}/><View style={{flex:1}}><Text style={s.noteText}>{n.body}</Text><Text style={s.noteDate}>{new Date(n.createdAt).toLocaleString()}</Text></View></View>):<Text style={s.muted}>No notes yet.</Text>}</Section><Section title="ACTIVITY"><View style={s.timeline}>{lead.activities.map((a,index)=><View key={a.id} style={s.activity}><View style={s.timelineRail}>{<View style={s.timelineDot}/>} {index<lead.activities.length-1&&<View style={s.timelineLine}/>}</View><View style={{flex:1}}><Text style={s.activityText}>{a.type.replaceAll('_',' ').toLowerCase()}</Text><Text style={s.noteDate}>{new Date(a.createdAt).toLocaleString()}</Text></View></View>)}</View></Section></ScrollView>}</SafeAreaView>}
-const s=StyleSheet.create({page:{flex:1,backgroundColor:colors.canvas},content:{padding:18,paddingBottom:42},profile:{alignItems:'center',gap:8,paddingVertical:9},name:{fontSize:26,fontWeight:'900',letterSpacing:-.5,color:colors.ink},added:{fontSize:11,color:colors.subtle},actions:{flexDirection:'row',justifyContent:'center',gap:12,marginVertical:18},action:{width:82,alignItems:'center',gap:7},actionIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},actionText:{fontSize:12,fontWeight:'800',color:colors.ink},disabled:{opacity:.38},card:{backgroundColor:colors.surface,borderRadius:radius.lg,borderWidth:1,borderColor:colors.line,padding:16},infoRow:{flexDirection:'row',alignItems:'center',gap:12},infoLabel:{fontSize:9,fontWeight:'800',letterSpacing:1,color:colors.subtle},infoValue:{fontSize:14,fontWeight:'700',color:colors.ink,marginTop:3},rule:{height:1,backgroundColor:colors.line,marginVertical:14},section:{marginTop:25,gap:11},sectionLabel:{fontSize:10,fontWeight:'900',letterSpacing:1.4,color:colors.muted},chips:{gap:8,flexDirection:'row',flexWrap:'wrap'},chip:{height:36,paddingHorizontal:13,borderRadius:radius.pill,borderWidth:1,borderColor:colors.line,backgroundColor:colors.surface,justifyContent:'center'},chipActive:{backgroundColor:colors.navy,borderColor:colors.navy},chipText:{fontSize:12,fontWeight:'700',color:colors.muted},chipTextActive:{color:'#fff'},personChip:{height:42,paddingHorizontal:7,paddingRight:14,borderRadius:radius.pill,borderWidth:1,borderColor:colors.line,backgroundColor:colors.surface,flexDirection:'row',alignItems:'center',gap:7},personText:{fontSize:12,fontWeight:'700',color:colors.ink},noteComposer:{backgroundColor:colors.surface,borderWidth:1,borderColor:colors.line,borderRadius:radius.lg,padding:11,flexDirection:'row',alignItems:'flex-end',gap:8},noteInput:{flex:1,minHeight:55,maxHeight:120,fontSize:14,color:colors.ink,padding:5,textAlignVertical:'top'},noteButton:{width:39,height:39,borderRadius:13,backgroundColor:colors.blue,alignItems:'center',justifyContent:'center'},note:{flexDirection:'row',gap:11,backgroundColor:colors.surface,borderRadius:radius.md,padding:14,borderWidth:1,borderColor:colors.line},noteLine:{width:3,borderRadius:2,backgroundColor:colors.blue},noteText:{fontSize:14,lineHeight:20,color:colors.ink},noteDate:{fontSize:10,color:colors.subtle,marginTop:5},muted:{fontSize:13,color:colors.subtle},timeline:{gap:0},activity:{minHeight:55,flexDirection:'row',gap:11},timelineRail:{width:16,alignItems:'center'},timelineDot:{width:9,height:9,borderRadius:5,backgroundColor:colors.blue,marginTop:4,zIndex:1},timelineLine:{position:'absolute',top:13,bottom:-4,width:1,backgroundColor:colors.line},activityText:{fontSize:13,fontWeight:'700',color:colors.ink,textTransform:'capitalize'}});
+import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Linking,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { api } from "../../src/services/api/client";
+import { Avatar, EmptyState, StatusPill } from "../../src/ui/components";
+import { colors, radius } from "../../src/ui/theme";
+type Status = { id: string; name: string };
+type Tag = { id: string; name: string };
+type Member = { role: string; user: { id: string; name: string } };
+type Lead = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  externalPageId?: string | null;
+  externalFormId?: string | null;
+  campaignExternalId?: string | null;
+  adExternalId?: string | null;
+  createdAt: string;
+  status: { id: string; name: string };
+  assignedUser?: { name: string } | null;
+  tags: Array<{ tag: Tag }>;
+  notes: Array<{
+    id: string;
+    body: string;
+    createdAt: string;
+    author?: { name: string };
+  }>;
+  activities: Array<{ id: string; type: string; createdAt: string }>;
+};
+const Section = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <View style={s.section}>
+    <Text style={s.sectionLabel}>{title}</Text>
+    {children}
+  </View>
+);
+export default function LeadDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const client = useQueryClient();
+  const [note, setNote] = useState("");
+  const query = useQuery({
+    queryKey: ["leads", id],
+    queryFn: () => api<Lead>(`/v1/leads/${id}`),
+    enabled: !!id,
+  });
+  const statuses = useQuery({
+    queryKey: ["lead-statuses"],
+    queryFn: () => api<Status[]>("/v1/lead-statuses"),
+  });
+  const tags = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api<Tag[]>("/v1/tags"),
+  });
+  const members = useQuery({
+    queryKey: ["team"],
+    queryFn: () => api<Member[]>("/v1/team"),
+  });
+  const refresh = () => client.invalidateQueries({ queryKey: ["leads", id] });
+  const update = useMutation({
+    mutationFn: (statusId: string) =>
+      api(`/v1/leads/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ statusId }),
+      }),
+    onSuccess: refresh,
+  });
+  const assign = useMutation({
+    mutationFn: (userId: string) =>
+      api(`/v1/leads/${id}/assign`, {
+        method: "POST",
+        body: JSON.stringify({ userId }),
+      }),
+    onSuccess: refresh,
+  });
+  const addTag = useMutation({
+    mutationFn: (tagId: string) =>
+      api(`/v1/leads/${id}/tags`, {
+        method: "POST",
+        body: JSON.stringify({ tagIds: [tagId] }),
+      }),
+    onSuccess: refresh,
+  });
+  const removeTag = useMutation({
+    mutationFn: (tagId: string) =>
+      api(`/v1/leads/${id}/tags/${tagId}`, { method: "DELETE" }),
+    onSuccess: refresh,
+  });
+  const addNote = useMutation({
+    mutationFn: (body: string) =>
+      api(`/v1/leads/${id}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      }),
+    onSuccess: () => {
+      setNote("");
+      void refresh();
+    },
+  });
+  const lead = query.data;
+  const selected = new Set(lead?.tags.map((x) => x.tag.id));
+  return (
+    <SafeAreaView style={s.page}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: "Lead profile",
+          headerTintColor: colors.ink,
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: colors.canvas },
+        }}
+      />
+      {query.isLoading ? (
+        <ActivityIndicator color={colors.blue} style={{ marginTop: 50 }} />
+      ) : query.isError || !lead ? (
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Lead unavailable"
+          body="This lead could not be loaded or you no longer have access."
+        />
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.content}
+        >
+          <View style={s.profile}>
+            <Avatar name={lead.name} size={64} />
+            <Text style={s.name}>{lead.name ?? "Unnamed lead"}</Text>
+            <StatusPill status={lead.status.name} />
+            <Text style={s.added}>
+              Added{" "}
+              {new Date(lead.createdAt).toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </Text>
+          </View>
+          <View style={s.actions}>
+            <Pressable
+              disabled={!lead.phone}
+              onPress={() => lead.phone && Linking.openURL(`tel:${lead.phone}`)}
+              style={[s.action, !lead.phone && s.disabled]}
+            >
+              <View
+                style={[s.actionIcon, { backgroundColor: colors.greenSoft }]}
+              >
+                <Ionicons name="call" size={19} color="#078451" />
+              </View>
+              <Text style={s.actionText}>Call</Text>
+            </Pressable>
+            <Pressable
+              disabled={!lead.phone}
+              onPress={() => lead.phone && Linking.openURL(`sms:${lead.phone}`)}
+              style={[s.action, !lead.phone && s.disabled]}
+            >
+              <View
+                style={[s.actionIcon, { backgroundColor: colors.blueSoft }]}
+              >
+                <Ionicons name="chatbubble" size={19} color={colors.blue} />
+              </View>
+              <Text style={s.actionText}>Message</Text>
+            </Pressable>
+            <Pressable
+              disabled={!lead.email}
+              onPress={() =>
+                lead.email && Linking.openURL(`mailto:${lead.email}`)
+              }
+              style={[s.action, !lead.email && s.disabled]}
+            >
+              <View style={[s.actionIcon, { backgroundColor: "#F1ECFF" }]}>
+                <Ionicons name="mail" size={19} color="#7656D8" />
+              </View>
+              <Text style={s.actionText}>Email</Text>
+            </Pressable>
+          </View>
+          <View style={s.card}>
+            <View style={s.infoRow}>
+              <Ionicons name="mail-outline" size={18} color={colors.blue} />
+              <View>
+                <Text style={s.infoLabel}>EMAIL</Text>
+                <Text style={s.infoValue}>{lead.email ?? "Not provided"}</Text>
+              </View>
+            </View>
+            <View style={s.rule} />
+            <View style={s.infoRow}>
+              <Ionicons name="call-outline" size={18} color={colors.blue} />
+              <View>
+                <Text style={s.infoLabel}>PHONE</Text>
+                <Text style={s.infoValue}>{lead.phone ?? "Not provided"}</Text>
+              </View>
+            </View>
+            <View style={s.rule} />
+            <View style={s.infoRow}>
+              <Ionicons name="person-outline" size={18} color={colors.blue} />
+              <View>
+                <Text style={s.infoLabel}>OWNER</Text>
+                <Text style={s.infoValue}>
+                  {lead.assignedUser?.name ?? "Unassigned"}
+                </Text>
+              </View>
+            </View>
+          </View>
+          <Section title="PIPELINE STATUS">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.chips}
+            >
+              {statuses.data?.map((status) => (
+                <Pressable
+                  key={status.id}
+                  style={[s.chip, status.id === lead.status.id && s.chipActive]}
+                  onPress={() => update.mutate(status.id)}
+                >
+                  <Text
+                    style={[
+                      s.chipText,
+                      status.id === lead.status.id && s.chipTextActive,
+                    ]}
+                  >
+                    {status.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Section>
+          <Section title="ASSIGN OWNER">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.chips}
+            >
+              {members.data
+                ?.filter((m) => m.role !== "VIEWER")
+                .map((m) => (
+                  <Pressable
+                    key={m.user.id}
+                    style={s.personChip}
+                    onPress={() => assign.mutate(m.user.id)}
+                  >
+                    <Avatar name={m.user.name} size={27} />
+                    <Text style={s.personText}>{m.user.name}</Text>
+                  </Pressable>
+                ))}
+            </ScrollView>
+          </Section>
+          <Section title="TAGS">
+            <View style={s.chips}>
+              {tags.data?.map((tag) => (
+                <Pressable
+                  key={tag.id}
+                  style={[s.chip, selected.has(tag.id) && s.chipActive]}
+                  onPress={() =>
+                    selected.has(tag.id)
+                      ? removeTag.mutate(tag.id)
+                      : addTag.mutate(tag.id)
+                  }
+                >
+                  <Text
+                    style={[
+                      s.chipText,
+                      selected.has(tag.id) && s.chipTextActive,
+                    ]}
+                  >
+                    # {tag.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </Section>
+          <Section title="ADD NOTE">
+            <View style={s.noteComposer}>
+              <TextInput
+                style={s.noteInput}
+                value={note}
+                onChangeText={setNote}
+                placeholder="Add context for your team…"
+                placeholderTextColor={colors.subtle}
+                multiline
+              />
+              <Pressable
+                style={[s.noteButton, !note.trim() && s.disabled]}
+                disabled={!note.trim() || addNote.isPending}
+                onPress={() => addNote.mutate(note.trim())}
+              >
+                <Ionicons name="arrow-up" size={20} color="#fff" />
+              </Pressable>
+            </View>
+          </Section>
+          <Section title="NOTES">
+            {lead.notes.length ? (
+              lead.notes.map((n) => (
+                <View key={n.id} style={s.note}>
+                  <View style={s.noteLine} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.noteText}>{n.body}</Text>
+                    <Text style={s.noteDate}>
+                      {new Date(n.createdAt).toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={s.muted}>No notes yet.</Text>
+            )}
+          </Section>
+          <Section title="ACTIVITY">
+            <View style={s.timeline}>
+              {lead.activities.map((a, index) => (
+                <View key={a.id} style={s.activity}>
+                  <View style={s.timelineRail}>
+                    <View style={s.timelineDot} />
+                    {index < lead.activities.length - 1 && (
+                      <View style={s.timelineLine} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.activityText}>
+                      {a.type.replaceAll("_", " ").toLowerCase()}
+                    </Text>
+                    <Text style={s.noteDate}>
+                      {new Date(a.createdAt).toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Section>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+const s = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.canvas },
+  content: { padding: 18, paddingBottom: 42 },
+  profile: { alignItems: "center", gap: 8, paddingVertical: 9 },
+  name: {
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    color: colors.ink,
+  },
+  added: { fontSize: 11, color: colors.subtle },
+  actions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginVertical: 18,
+  },
+  action: { width: 82, alignItems: "center", gap: 7 },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionText: { fontSize: 12, fontWeight: "800", color: colors.ink },
+  disabled: { opacity: 0.38 },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+  },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  infoLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: colors.subtle,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.ink,
+    marginTop: 3,
+  },
+  rule: { height: 1, backgroundColor: colors.line, marginVertical: 14 },
+  section: { marginTop: 25, gap: 11 },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    color: colors.muted,
+  },
+  chips: { gap: 8, flexDirection: "row", flexWrap: "wrap" },
+  chip: {
+    height: 36,
+    paddingHorizontal: 13,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+  },
+  chipActive: { backgroundColor: colors.navy, borderColor: colors.navy },
+  chipText: { fontSize: 12, fontWeight: "700", color: colors.muted },
+  chipTextActive: { color: "#fff" },
+  personChip: {
+    height: 42,
+    paddingHorizontal: 7,
+    paddingRight: 14,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  personText: { fontSize: 12, fontWeight: "700", color: colors.ink },
+  noteComposer: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    padding: 11,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  noteInput: {
+    flex: 1,
+    minHeight: 55,
+    maxHeight: 120,
+    fontSize: 14,
+    color: colors.ink,
+    padding: 5,
+    textAlignVertical: "top",
+  },
+  noteButton: {
+    width: 39,
+    height: 39,
+    borderRadius: 13,
+    backgroundColor: colors.blue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  note: {
+    flexDirection: "row",
+    gap: 11,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  noteLine: { width: 3, borderRadius: 2, backgroundColor: colors.blue },
+  noteText: { fontSize: 14, lineHeight: 20, color: colors.ink },
+  noteDate: { fontSize: 10, color: colors.subtle, marginTop: 5 },
+  muted: { fontSize: 13, color: colors.subtle },
+  timeline: { gap: 0 },
+  activity: { minHeight: 55, flexDirection: "row", gap: 11 },
+  timelineRail: { width: 16, alignItems: "center" },
+  timelineDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.blue,
+    marginTop: 4,
+    zIndex: 1,
+  },
+  timelineLine: {
+    position: "absolute",
+    top: 13,
+    bottom: -4,
+    width: 1,
+    backgroundColor: colors.line,
+  },
+  activityText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.ink,
+    textTransform: "capitalize",
+  },
+});

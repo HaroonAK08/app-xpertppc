@@ -1,4 +1,224 @@
-import { Ionicons } from '@expo/vector-icons';import { zodResolver } from '@hookform/resolvers/zod';import { router } from 'expo-router';import { Controller,useForm } from 'react-hook-form';import { ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';import { z } from 'zod';import { api } from '../../src/services/api/client';import { useSessionStore } from '../../src/store/session';import { BrandMark } from '../../src/ui/components';import { colors,radius } from '../../src/ui/theme';
-const schema=z.object({name:z.string().min(2,'Enter your name'),email:z.email('Enter a valid work email'),organizationName:z.string().min(2,'Enter your business name'),password:z.string().min(12,'Use at least 12 characters')});type Form=z.infer<typeof schema>;const fields=[['name','person-outline','Your name','Haroon Khan'],['email','mail-outline','Work email','you@company.com'],['organizationName','business-outline','Business name','Your company'],['password','lock-closed-outline','Password','12+ characters']] as const;
-export default function Signup(){const setTokens=useSessionStore(s=>s.setTokens);const{control,handleSubmit,setError,formState:{errors,isSubmitting}}=useForm<Form>({resolver:zodResolver(schema),defaultValues:{name:'',email:'',organizationName:'',password:''}});const submit=handleSubmit(async values=>{try{const tokens=await api<{accessToken:string;refreshToken:string}>('/v1/auth/signup',{method:'POST',body:JSON.stringify(values)});await setTokens(tokens);router.replace('/(onboarding)/connect-meta')}catch(e){setError('root',{message:e instanceof Error?e.message:'Account creation failed'})}});return <SafeAreaView style={s.page}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}><BrandMark/><Pressable style={s.back} onPress={()=>router.back()}><Ionicons name="arrow-back" size={18} color="#fff"/><Text style={s.backText}>Sign in</Text></Pressable><Text style={s.eyebrow}>START GROWING</Text><Text style={s.title}>Build your sales{`\n`}workspace.</Text><Text style={s.subtitle}>One secure place for every lead, owner, and follow-up.</Text><View style={s.form}>{fields.map(([name,icon,label,placeholder])=><View key={name} style={s.field}><Text style={s.label}>{label}</Text><View style={[s.inputWrap,errors[name]&&s.inputError]}><Ionicons name={icon} size={18} color={colors.subtle}/><Controller control={control} name={name} render={({field})=><TextInput autoCapitalize={name==='email'?'none':'words'} keyboardType={name==='email'?'email-address':'default'} secureTextEntry={name==='password'} placeholder={placeholder} placeholderTextColor={colors.subtle} style={s.input} value={field.value} onBlur={field.onBlur} onChangeText={field.onChange}/>} /></View>{errors[name]&&<Text style={s.error}>{errors[name]?.message}</Text>}</View>)}{errors.root?.message&&<Text style={s.errorBox}>{errors.root.message}</Text>}<Pressable style={({pressed})=>[s.button,pressed&&s.pressed,isSubmitting&&s.disabled]} disabled={isSubmitting} onPress={submit}>{isSubmitting?<ActivityIndicator color="#fff"/>:<><Text style={s.buttonText}>Create workspace</Text><Ionicons name="arrow-forward" size={18} color="#fff"/></>}</Pressable><View style={s.promise}><Ionicons name="shield-checkmark" size={17} color={colors.green}/><Text style={s.promiseText}>Organization data is isolated and encrypted</Text></View></View></ScrollView></KeyboardAvoidingView></SafeAreaView>}
-const s=StyleSheet.create({page:{flex:1,backgroundColor:colors.navy},content:{flexGrow:1,padding:24,paddingTop:34,paddingBottom:28},back:{flexDirection:'row',alignItems:'center',gap:6,marginTop:28,marginBottom:30},backText:{color:'#fff',fontWeight:'700',fontSize:13},eyebrow:{fontSize:11,fontWeight:'800',letterSpacing:1.7,color:colors.green,marginBottom:9},title:{fontSize:35,lineHeight:41,fontWeight:'900',letterSpacing:-1,color:'#fff'},subtitle:{fontSize:14,lineHeight:21,color:'#AFC0DC',marginTop:9,marginBottom:23},form:{gap:13},field:{gap:7},label:{fontSize:11,fontWeight:'800',color:'#DCE7F8'},inputWrap:{height:52,borderRadius:radius.md,borderWidth:1,borderColor:'#29446C',backgroundColor:colors.navySoft,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10},inputError:{borderColor:colors.danger},input:{flex:1,height:'100%',fontSize:15,color:'#fff'},error:{fontSize:11,color:'#FF9B9F'},errorBox:{color:'#FFB5B8',backgroundColor:'#3A1930',borderRadius:12,padding:12},button:{height:54,borderRadius:radius.md,backgroundColor:colors.blue,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9,marginTop:5},buttonText:{color:'#fff',fontWeight:'900',fontSize:15},pressed:{opacity:.78,transform:[{scale:.99}]},disabled:{opacity:.6},promise:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,marginTop:3},promiseText:{fontSize:11,color:'#8397B7'}});
+import { Ionicons } from "@expo/vector-icons";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { router } from "expo-router";
+import { Controller, useForm } from "react-hook-form";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { z } from "zod";
+import { api } from "../../src/services/api/client";
+import { useSessionStore } from "../../src/store/session";
+import { BrandMark } from "../../src/ui/components";
+import { colors, radius } from "../../src/ui/theme";
+const schema = z.object({
+  name: z.string().min(2, "Enter your name"),
+  email: z.email("Enter a valid work email"),
+  organizationName: z.string().min(2, "Enter your business name"),
+  password: z.string().min(12, "Use at least 12 characters"),
+});
+type Form = z.infer<typeof schema>;
+const fields = [
+  ["name", "person-outline", "Your name", "Haroon Khan"],
+  ["email", "mail-outline", "Work email", "you@company.com"],
+  ["organizationName", "business-outline", "Business name", "Your company"],
+  ["password", "lock-closed-outline", "Password", "12+ characters"],
+] as const;
+export default function Signup() {
+  const setTokens = useSessionStore((s) => s.setTokens);
+  const {
+    control,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<Form>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: "", email: "", organizationName: "", password: "" },
+  });
+  const submit = handleSubmit(async (values) => {
+    try {
+      const tokens = await api<{ accessToken: string; refreshToken: string }>(
+        "/v1/auth/signup",
+        { method: "POST", body: JSON.stringify(values) },
+      );
+      await setTokens(tokens);
+      router.replace("/(onboarding)/connect-meta");
+    } catch (e) {
+      setError("root", {
+        message: e instanceof Error ? e.message : "Account creation failed",
+      });
+    }
+  });
+  return (
+    <SafeAreaView style={s.page}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={s.content}
+        >
+          <BrandMark />
+          <Pressable style={s.back} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={18} color="#fff" />
+            <Text style={s.backText}>Sign in</Text>
+          </Pressable>
+          <Text style={s.eyebrow}>START GROWING</Text>
+          <Text style={s.title}>Build your sales{`\n`}workspace.</Text>
+          <Text style={s.subtitle}>
+            One secure place for every lead, owner, and follow-up.
+          </Text>
+          <View style={s.form}>
+            {fields.map(([name, icon, label, placeholder]) => (
+              <View key={name} style={s.field}>
+                <Text style={s.label}>{label}</Text>
+                <View style={[s.inputWrap, errors[name] && s.inputError]}>
+                  <Ionicons name={icon} size={18} color={colors.subtle} />
+                  <Controller
+                    control={control}
+                    name={name}
+                    render={({ field }) => (
+                      <TextInput
+                        autoCapitalize={name === "email" ? "none" : "words"}
+                        keyboardType={
+                          name === "email" ? "email-address" : "default"
+                        }
+                        secureTextEntry={name === "password"}
+                        placeholder={placeholder}
+                        placeholderTextColor={colors.subtle}
+                        style={s.input}
+                        value={field.value}
+                        onBlur={field.onBlur}
+                        onChangeText={field.onChange}
+                      />
+                    )}
+                  />
+                </View>
+                {errors[name] && (
+                  <Text style={s.error}>{errors[name]?.message}</Text>
+                )}
+              </View>
+            ))}
+            {errors.root?.message && (
+              <Text style={s.errorBox}>{errors.root.message}</Text>
+            )}
+            <Pressable
+              style={({ pressed }) => [
+                s.button,
+                pressed && s.pressed,
+                isSubmitting && s.disabled,
+              ]}
+              disabled={isSubmitting}
+              onPress={submit}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={s.buttonText}>Create workspace</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </>
+              )}
+            </Pressable>
+            <View style={s.promise}>
+              <Ionicons
+                name="shield-checkmark"
+                size={17}
+                color={colors.green}
+              />
+              <Text style={s.promiseText}>
+                Organization data is isolated and encrypted
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+const s = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.navy },
+  content: { flexGrow: 1, padding: 24, paddingTop: 34, paddingBottom: 28 },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 28,
+    marginBottom: 30,
+  },
+  backText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.7,
+    color: colors.green,
+    marginBottom: 9,
+  },
+  title: {
+    fontSize: 35,
+    lineHeight: 41,
+    fontWeight: "900",
+    letterSpacing: -1,
+    color: "#fff",
+  },
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#AFC0DC",
+    marginTop: 9,
+    marginBottom: 23,
+  },
+  form: { gap: 13 },
+  field: { gap: 7 },
+  label: { fontSize: 11, fontWeight: "800", color: "#DCE7F8" },
+  inputWrap: {
+    height: 52,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#29446C",
+    backgroundColor: colors.navySoft,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  inputError: { borderColor: colors.danger },
+  input: { flex: 1, height: "100%", fontSize: 15, color: "#fff" },
+  error: { fontSize: 11, color: "#FF9B9F" },
+  errorBox: {
+    color: "#FFB5B8",
+    backgroundColor: "#3A1930",
+    borderRadius: 12,
+    padding: 12,
+  },
+  button: {
+    height: 54,
+    borderRadius: radius.md,
+    backgroundColor: colors.blue,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    marginTop: 5,
+  },
+  buttonText: { color: "#fff", fontWeight: "900", fontSize: 15 },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
+  disabled: { opacity: 0.6 },
+  promise: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: 3,
+  },
+  promiseText: { fontSize: 11, color: "#8397B7" },
+});

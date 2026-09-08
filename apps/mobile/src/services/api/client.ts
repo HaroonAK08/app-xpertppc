@@ -1,5 +1,54 @@
-import * as SecureStore from 'expo-secure-store';
-import { useSessionStore } from '../../store/session';
-const baseUrl=process.env.EXPO_PUBLIC_API_BASE_URL??'http://localhost:3000';let refreshPromise:Promise<string|null>|null=null;
-async function refreshAccess():Promise<string|null>{const refreshToken=await SecureStore.getItemAsync('refreshToken');if(!refreshToken)return null;try{const response=await fetch(`${baseUrl}/v1/auth/refresh`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({refreshToken})});if(!response.ok)throw new Error('refresh failed');const tokens=await response.json() as {accessToken:string;refreshToken:string};await useSessionStore.getState().setTokens(tokens);return tokens.accessToken}catch{await useSessionStore.getState().clear();return null}}
-export async function api<T>(path:string,init:RequestInit={},retry=true):Promise<T>{const token=await SecureStore.getItemAsync('accessToken');const response=await fetch(`${baseUrl}${path}`,{...init,headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{ }),...init.headers}});if(response.status===401&&retry){refreshPromise??=refreshAccess().finally(()=>{refreshPromise=null});if(await refreshPromise)return api<T>(path,init,false)}const payload=await response.json() as T|{error:{message:string}};if(!response.ok)throw new Error('error'in(payload as object)?(payload as {error:{message:string}}).error.message:'Request failed');return payload as T}
+import * as SecureStore from "expo-secure-store";
+import { useSessionStore } from "../../store/session";
+const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+let refreshPromise: Promise<string | null> | null = null;
+async function refreshAccess(): Promise<string | null> {
+  const refreshToken = await SecureStore.getItemAsync("refreshToken");
+  if (!refreshToken) return null;
+  try {
+    const response = await fetch(`${baseUrl}/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) throw new Error("refresh failed");
+    const tokens = (await response.json()) as {
+      accessToken: string;
+      refreshToken: string;
+    };
+    await useSessionStore.getState().setTokens(tokens);
+    return tokens.accessToken;
+  } catch {
+    await useSessionStore.getState().clear();
+    return null;
+  }
+}
+export async function api<T>(
+  path: string,
+  init: RequestInit = {},
+  retry = true,
+): Promise<T> {
+  const token = await SecureStore.getItemAsync("accessToken");
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...init.headers,
+    },
+  });
+  if (response.status === 401 && retry) {
+    refreshPromise ??= refreshAccess().finally(() => {
+      refreshPromise = null;
+    });
+    if (await refreshPromise) return api<T>(path, init, false);
+  }
+  const payload = (await response.json()) as T | { error: { message: string } };
+  if (!response.ok)
+    throw new Error(
+      "error" in (payload as object)
+        ? (payload as { error: { message: string } }).error.message
+        : "Request failed",
+    );
+  return payload as T;
+}

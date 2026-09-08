@@ -1,4 +1,36 @@
-export const colors={navy:'#07152F',navySoft:'#10254B',blue:'#1683FF',blueDark:'#0967D8',blueSoft:'#EAF3FF',green:'#24D17E',greenSoft:'#E7FAF1',canvas:'#F5F8FC',surface:'#FFFFFF',surfaceAlt:'#EEF3F9',ink:'#101C33',muted:'#68758A',subtle:'#94A1B5',line:'#DFE7F1',danger:'#E5484D',dangerSoft:'#FFF0F0',warning:'#F59E0B'} as const;
-export const radius={sm:10,md:14,lg:20,xl:28,pill:999} as const;
-export const shadow={shadowColor:'#0B1C38',shadowOffset:{width:0,height:7},shadowOpacity:.08,shadowRadius:18,elevation:3} as const;
-export const statusColor=(status:string)=>{const key=status.toUpperCase();if(key==='WON'||key==='QUALIFIED')return{bg:colors.greenSoft,fg:'#078451'};if(key==='LOST')return{bg:colors.dangerSoft,fg:colors.danger};if(key==='PROPOSAL'||key==='CONTACTED')return{bg:colors.blueSoft,fg:colors.blueDark};return{bg:'#F0F3F8',fg:'#526078'}};
+export const colors = {
+  navy: "#07152F",
+  navySoft: "#10254B",
+  blue: "#1683FF",
+  blueDark: "#0967D8",
+  blueSoft: "#EAF3FF",
+  green: "#24D17E",
+  greenSoft: "#E7FAF1",
+  canvas: "#F5F8FC",
+  surface: "#FFFFFF",
+  surfaceAlt: "#EEF3F9",
+  ink: "#101C33",
+  muted: "#68758A",
+  subtle: "#94A1B5",
+  line: "#DFE7F1",
+  danger: "#E5484D",
+  dangerSoft: "#FFF0F0",
+  warning: "#F59E0B",
+} as const;
+export const radius = { sm: 10, md: 14, lg: 20, xl: 28, pill: 999 } as const;
+export const shadow = {
+  shadowColor: "#0B1C38",
+  shadowOffset: { width: 0, height: 7 },
+  shadowOpacity: 0.08,
+  shadowRadius: 18,
+  elevation: 3,
+} as const;
+export const statusColor = (status: string) => {
+  const key = status.toUpperCase();
+  if (key === "WON" || key === "QUALIFIED")
+    return { bg: colors.greenSoft, fg: "#078451" };
+  if (key === "LOST") return { bg: colors.dangerSoft, fg: colors.danger };
+  if (key === "PROPOSAL" || key === "CONTACTED")
+    return { bg: colors.blueSoft, fg: colors.blueDark };
+  return { bg: "#F0F3F8", fg: "#526078" };
+};
