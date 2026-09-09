@@ -13,6 +13,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
+        sceneStyle: { backgroundColor: colors.canvas },
+        animation: "fade",
+        lazy: true,
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.subtle,

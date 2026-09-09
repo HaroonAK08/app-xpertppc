@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { io, type Socket } from "socket.io-client";
-const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://xpertppc.com";
 const events = [
   "lead.created",
   "lead.updated",

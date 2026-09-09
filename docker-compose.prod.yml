@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: lead_saas
+      POSTGRES_USER: lead_saas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [lead_saas_pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lead_saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks: [lead_saas]
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes: [lead_saas_redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [lead_saas]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://lead_saas:${POSTGRES_PASSWORD}@postgres:5432/lead_saas
+    command: ["corepack", "pnpm", "--filter", "@lead-saas/database", "exec", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [lead_saas]
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://lead_saas:${POSTGRES_PASSWORD}@postgres:5432/lead_saas
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+      NODE_ENV: production
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    ports: ["3100:3000"]
+    restart: unless-stopped
+    networks: [lead_saas]
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://lead_saas:${POSTGRES_PASSWORD}@postgres:5432/lead_saas
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [lead_saas]
+
+volumes:
+  lead_saas_pg:
+  lead_saas_redis:
+
+networks:
+  lead_saas:
+    name: lead_saas_net

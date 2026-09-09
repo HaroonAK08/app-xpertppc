@@ -5,6 +5,7 @@ import {
   AccessibilityInfo,
   Animated,
   Easing,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -13,18 +14,13 @@ import {
 import { colors, radius, shadow, statusColor } from "./theme";
 type IconName = ComponentProps<typeof Ionicons>["name"];
 export function BrandMark({ compact = false }: { compact?: boolean }) {
+  const size = compact ? 36 : 72;
   return (
-    <View style={s.brand}>
-      <View style={s.logo}>
-        <View style={s.logoCore} />
-      </View>
-      {!compact && (
-        <View style={s.brandWord}>
-          <Text style={[s.brandText, s.brandBlue]}>XPERT</Text>
-          <Text style={s.brandText}>PPC</Text>
-        </View>
-      )}
-    </View>
+    <Image
+      source={require("../../assets/xpertppc-logo.png")}
+      accessibilityLabel="XpertPPC"
+      style={{ width: size, height: size, borderRadius: size / 2 }}
+    />
   );
 }
 export function ScreenHeader({
@@ -170,30 +166,6 @@ export const ui = {
   page: { flex: 1, backgroundColor: colors.canvas },
 } as const;
 const s = StyleSheet.create({
-  brand: { flexDirection: "row", alignItems: "center", gap: 8 },
-  brandWord: { flexDirection: "row", alignItems: "center" },
-  logo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: colors.blue,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoCore: {
-    width: 12,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.blue,
-  },
-  brandText: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: -0.4,
-  },
-  brandBlue: { color: colors.blue },
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
   eyebrow: {
     fontSize: 11,

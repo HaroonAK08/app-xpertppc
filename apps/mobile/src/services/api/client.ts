@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { useSessionStore } from "../../store/session";
-const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://xpertppc.com";
 let refreshPromise: Promise<string | null> | null = null;
 const REQUEST_TIMEOUT_MS = 20_000;
 async function refreshAccess(): Promise<string | null> {

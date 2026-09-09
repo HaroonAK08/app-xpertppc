@@ -1,1 +1,8 @@
-{"expo":{"name":"Lead CRM","slug":"lead-crm","scheme":"app","version":"0.1.0","orientation":"portrait","userInterfaceStyle":"automatic","plugins":["expo-router","expo-secure-store","expo-notifications"],"experiments":{"typedRoutes":true}}}
+{
+  "expo": {
+    "name": "XpertPPC CRM",
+    "slug": "xpertppc-crm",
+    "scheme": "app",
+    "version": "0.1.0"
+  }
+}

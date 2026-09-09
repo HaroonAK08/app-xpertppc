@@ -10,3 +10,7 @@ coverage/
 .DS_Store
 .claude/codebase-map.md
 .claude/codebase-map-meta.json
+
+.env.production
+.env.compose
+.pnpm-store/
